@@ -1,17 +1,59 @@
+using ShpRead;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading.Tasks;
+
 namespace ShpRead
 {
-    [StructLayout(LayoutKind.Explicit)]
-    [DebuggerDisplay("Xmin: {Xmin}; Ymin: {Ymin}")]
+    public enum ShapeType : short
+    {
+        NullShape = 0, Point = 1,
+        PolyLine = 3, Polygon = 5,
+        Multipoint = 8, PointZ = 11,
+        PolyLineZ = 13, PolygonZ = 15,
+        MultipointZ = 18, PointM = 21,
+        PolyLineM = 23, PolygonM = 25,
+        MultipointM = 28, MultiPatch = 31
+    }
+
+    [StructLayout(LayoutKind.Explicit, Size = 100)]
+    [DebuggerDisplay("{_ShapeType} (Xmin: {Xmin}; Ymin: {Ymin}; Xmax: {Xmax}; Ymax: {Ymax})")]
     public struct ShapeFileHeader
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int _swap(uint value) =>
-#if BIGENDIAN
-            return value;
-#else
-           (int)((value >> 24) & 0xffU | ((value << 8) & 0xff0000U) | ((value >> 8) & 0xff00U) | ((value << 24) & 0xff000000U));
-#endif
+        private static int Swap(int value)
+        {
+            //Original
+            //uint v = (uint)value;
+            //v = (v >> 16) | (v << 16);
+            //return (int)(((v & 0xFF00FF00) >> 8) | ((v & 0x00FF00FF) << 8));
 
+            //Optimized
+            uint v = (uint)((int)((uint)value >> 16) | value << 16);
+            return (int)((uint)((int)v & -16711936) >> 8 | (v & 0xFF00FF) << 8);
+        }
+
+        [System.Security.SecuritySafeCritical]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe static double NaNToMin(double value)
+        {
+            if ((*(ulong*)(&value) & 0x7FFFFFFFFFFFFFFF) <= 9218868437227405312uL)
+                return value;
+            return double.MinValue;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static double MinToNaN(double value)
+        {
+            if (value == double.MinValue)
+                return double.NaN;
+            return value;
+        }
 
         /* Big endian fields */
         [FieldOffset(0)] private int _FileCode;
@@ -24,7 +66,7 @@ namespace ShpRead
         [FieldOffset(28)] private int _Version;
 
         /* Little endian fields */
-        [FieldOffset(32)] private int _ShapeType;
+        [FieldOffset(32)] private ShapeType _ShapeType;
         [FieldOffset(36)] private double _Xmin;
         [FieldOffset(44)] private double _Ymin;
         [FieldOffset(52)] private double _Xmax;
@@ -35,34 +77,173 @@ namespace ShpRead
         [FieldOffset(92)] private double _Mmax;
 
         /* Big endian properties */
-        public int FileCode { get => _swap((uint)_FileCode); set => _FileCode = _swap((uint)value); }
-        public int Unused0 { get => _swap((uint)_Unused0); set => _Unused0 = _swap((uint)value); }
-        public int Unused1 { get => _swap((uint)_Unused1); set => _Unused1 = _swap((uint)value); }
-        public int Unused2 { get => _swap((uint)_Unused2); set => _Unused2 = _swap((uint)value); }
-        public int Unused3 { get => _swap((uint)_Unused3); set => _Unused3 = _swap((uint)value); }
-        public int Unused4 { get => _swap((uint)_Unused4); set => _Unused4 = _swap((uint)value); }
-        public int FileLength { get => _swap((uint)_FileLength); set => _FileLength = _swap((uint)value); }
+        public int FileCode { get => Swap(_FileCode); set => _FileCode = Swap(value); }
+        public int Unused0 { get => Swap(_Unused0); set => _Unused0 = Swap(value); }
+        public int Unused1 { get => Swap(_Unused1); set => _Unused1 = Swap(value); }
+        public int Unused2 { get => Swap(_Unused2); set => _Unused2 = Swap(value); }
+        public int Unused3 { get => Swap(_Unused3); set => _Unused3 = Swap(value); }
+        public int Unused4 { get => Swap(_Unused4); set => _Unused4 = Swap(value); }
+        public int FileLength { get => Swap(_FileLength); set => _FileLength = Swap(value); }
 
         /* Little endian properties */
         public int Version { get => _Version; set => _Version = value; }
-        public int ShapeType { get => _ShapeType; set => _ShapeType = value; }
+        public ShapeType ShapeType { get => _ShapeType; set => _ShapeType = value; }
         public double Xmin { get => _Xmin; set => _Xmin = value; }
         public double Ymin { get => _Ymin; set => _Ymin = value; }
         public double Xmax { get => _Xmax; set => _Xmax = value; }
         public double Ymax { get => _Ymax; set => _Ymax = value; }
-        public double Zmin
-        {
-            get => _Zmin == double.MinValue ? double.NaN : _Zmin;
-            set => _Zmin = double.IsNaN(value) ? double.MinValue : value;
-        }
-        public double Zmax { get => _Zmax; set => _Zmax = value; }
-        public double Mmin { get => _Mmin; set => _Mmin = value; }
-        public double Mmax { get => _Mmax; set => _Mmax = value; }
+        public double Zmin { get => MinToNaN(_Zmin); set => _Zmin = NaNToMin(value); }
+        public double Zmax { get => MinToNaN(_Zmax); set => _Zmax = NaNToMin(value); }
+        public double Mmin { get => MinToNaN(_Mmin); set => _Mmin = NaNToMin(value); }
+        public double Mmax { get => MinToNaN(_Mmax); set => _Mmax = NaNToMin(value); }
 
+        [System.Security.SecuritySafeCritical]
         public unsafe ShapeFileHeader(in byte[] buffer)
         {
             fixed (byte* ptr = &buffer[0])
                 this = *(ShapeFileHeader*)ptr;
+        }
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    public struct NullShape
+    {
+        [FieldOffset(0)] private ShapeType _ShapeType;
+        public ShapeType ShapeType { get => _ShapeType; set => _ShapeType = value; }
+
+        [System.Security.SecuritySafeCritical]
+        public unsafe NullShape(in byte[] buffer, int offset)
+        {
+            fixed (byte* ptr = &buffer[offset])
+                this = *(NullShape*)ptr;
+        }
+
+        [System.Security.SecuritySafeCritical]
+        public unsafe NullShape(in byte[] buffer) : this(buffer, 0) { }
+    }
+
+    [StructLayout(LayoutKind.Explicit, Size = 20)]
+    public struct Point
+    {
+        [FieldOffset(0)] private ShapeType _ShapeType;
+        [FieldOffset(4)] private double _X;
+        [FieldOffset(12)] private double _Y;
+
+        public ShapeType ShapeType { get => _ShapeType; set => _ShapeType = value; }
+        public double X { get => _X; set => _X = value; }
+        public double Y { get => _Y; set => _Y = value; }
+
+        [System.Security.SecuritySafeCritical]
+        public unsafe Point(in byte[] buffer, int offset)
+        {
+            fixed (byte* ptr = &buffer[offset])
+                this = *(Point*)ptr;
+        }
+
+        [System.Security.SecuritySafeCritical]
+        public unsafe Point(in byte[] buffer) : this(buffer, 0) { }
+    }
+
+    [StructLayout(LayoutKind.Explicit, Size = 28)]
+    public struct PointM
+    {
+        [FieldOffset(0)] private ShapeType _ShapeType;
+        [FieldOffset(4)] private double _X;
+        [FieldOffset(12)] private double _Y;
+        [FieldOffset(20)] private double _M;
+
+        public ShapeType ShapeType { get => _ShapeType; set => _ShapeType = value; }
+        public double X { get => _X; set => _X = value; }
+        public double Y { get => _Y; set => _Y = value; }
+        public double M { get => _M; set => _M = value; }
+
+        [System.Security.SecuritySafeCritical]
+        public unsafe PointM(in byte[] buffer, int offset)
+        {
+            fixed (byte* ptr = &buffer[offset])
+                this = *(PointM*)ptr;
+        }
+
+        [System.Security.SecuritySafeCritical]
+        public unsafe PointM(in byte[] buffer) : this(buffer, 0) { }
+    }
+
+    [StructLayout(LayoutKind.Explicit, Size = 36)]
+    public struct PointZ
+    {
+        [FieldOffset(0)] private ShapeType _ShapeType;
+        [FieldOffset(4)] private double _X;
+        [FieldOffset(12)] private double _Y;
+        [FieldOffset(20)] private double _Z;
+        [FieldOffset(28)] private double _M;
+
+        public ShapeType ShapeType { get => _ShapeType; set => _ShapeType = value; }
+        public double X { get => _X; set => _X = value; }
+        public double Y { get => _Y; set => _Y = value; }
+        public double Z { get => _Z; set => _Z = value; }
+        public double M { get => _M; set => _M = value; }
+
+        [System.Security.SecuritySafeCritical]
+        public unsafe PointZ(in byte[] buffer, int offset)
+        {
+            fixed (byte* ptr = &buffer[offset])
+                this = *(PointZ*)ptr;
+        }
+
+        [System.Security.SecuritySafeCritical]
+        public unsafe PointZ(in byte[] buffer) : this(buffer, 0) { }
+    }
+
+
+    public class ShapeFile
+    {
+        public ShapeFileHeader Header { get; set; }
+        public unsafe ShapeFile(string path)
+        {
+            using (System.IO.FileStream FS = new System.IO.FileStream(path, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read))
+            {
+                byte[] buffer = new byte[100];
+                byte[] type = new byte[2];
+                ShapeType shptype;
+                FS.Read(buffer, 0, 100);
+                Header = new ShapeFileHeader(buffer);
+                FS.Read(type, 0, 2);
+                fixed (byte* ptr = &type[0])
+                    shptype = *(ShapeType*)ptr;
+
+                switch (shptype)
+                {
+                    case ShapeType.NullShape:
+                        break;
+                    case ShapeType.Point:
+                        break;
+                    case ShapeType.PolyLine:
+                        break;
+                    case ShapeType.Polygon:
+                        break;
+                    case ShapeType.Multipoint:
+                        break;
+                    case ShapeType.PointZ:
+                        break;
+                    case ShapeType.PolyLineZ:
+                        break;
+                    case ShapeType.PolygonZ:
+                        break;
+                    case ShapeType.MultipointZ:
+                        break;
+                    case ShapeType.PointM:
+                        break;
+                    case ShapeType.PolyLineM:
+                        break;
+                    case ShapeType.PolygonM:
+                        break;
+                    case ShapeType.MultipointM:
+                        break;
+                    case ShapeType.MultiPatch:
+                        break;
+                }
+
+            }
         }
     }
 }
