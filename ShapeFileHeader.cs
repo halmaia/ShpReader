@@ -15,11 +15,11 @@ namespace ShpRead
     {
         int RecordNumber { get; set; }
         int ContentLength { get; set; }
+        ShapeType ShapeType { get; set; }
     }
 
     public interface IGeometry
     {
-        ShapeType ShapeType { get; set; }
     }
 
     public interface IPoint : IGeometry
@@ -36,128 +36,6 @@ namespace ShpRead
     public interface IPointZ : IPointM
     {
         double Z { get; set; }
-    }
-
-    [StructLayout(LayoutKind.Explicit, Size = 8)]
-    public struct RecordHeader : IRecordHeader
-    {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int Swap(int value)
-        {
-            //Original
-            //uint v = (uint)value;
-            //v = (v >> 16) | (v << 16);
-            //return (int)(((v & 0xFF00FF00) >> 8) | ((v & 0x00FF00FF) << 8));
-
-            //Optimized
-            uint v = (uint)((int)((uint)value >> 16) | value << 16);
-            return (int)((uint)((int)v & -16711936) >> 8 | (v & 0xFF00FF) << 8);
-        }
-
-        [FieldOffset(0)] private int _RecordNumber;
-        [FieldOffset(4)] private int _ContentLength;
-
-        public int RecordNumber { get => Swap(_RecordNumber); set => _RecordNumber = Swap(value); }
-        public int ContentLength { get => Swap(_ContentLength); set => _ContentLength = Swap(value); }
-
-        [System.Security.SecuritySafeCritical]
-        public unsafe RecordHeader(in byte[] buffer, int offset)
-        {
-            fixed (byte* ptr = &buffer[offset])
-                this = *(RecordHeader*)ptr;
-        }
-
-        [System.Security.SecuritySafeCritical]
-        public unsafe RecordHeader(in byte[] buffer) : this(buffer, 0) { }
-    }
-
-    [StructLayout(LayoutKind.Explicit, Size = 4)]
-    public struct NullShape : IGeometry
-    {
-        [FieldOffset(0)] private ShapeType _ShapeType;
-        public ShapeType ShapeType { get => _ShapeType; set => _ShapeType = value; }
-
-        [System.Security.SecuritySafeCritical]
-        public unsafe NullShape(in byte[] buffer, int offset)
-        {
-            fixed (byte* ptr = &buffer[offset])
-                this = *(NullShape*)ptr;
-        }
-
-        [System.Security.SecuritySafeCritical]
-        public unsafe NullShape(in byte[] buffer) : this(buffer, 0) { }
-    }
-
-    [StructLayout(LayoutKind.Explicit, Size = 20)]
-    public struct Point : IPoint
-    {
-        [FieldOffset(0)] private ShapeType _ShapeType;
-        [FieldOffset(4)] private double _X;
-        [FieldOffset(12)] private double _Y;
-
-        public ShapeType ShapeType { get => _ShapeType; set => _ShapeType = value; }
-        public double X { get => _X; set => _X = value; }
-        public double Y { get => _Y; set => _Y = value; }
-
-        [System.Security.SecuritySafeCritical]
-        public unsafe Point(in byte[] buffer, int offset)
-        {
-            fixed (byte* ptr = &buffer[offset])
-                this = *(Point*)ptr;
-        }
-
-        [System.Security.SecuritySafeCritical]
-        public unsafe Point(in byte[] buffer) : this(buffer, 0) { }
-    }
-
-    [StructLayout(LayoutKind.Explicit, Size = 28)]
-    public struct PointM : IPointM
-    {
-        [FieldOffset(0)] private ShapeType _ShapeType;
-        [FieldOffset(4)] private double _X;
-        [FieldOffset(12)] private double _Y;
-        [FieldOffset(20)] private double _M;
-
-        public ShapeType ShapeType { get => _ShapeType; set => _ShapeType = value; }
-        public double X { get => _X; set => _X = value; }
-        public double Y { get => _Y; set => _Y = value; }
-        public double M { get => _M; set => _M = value; }
-
-        [System.Security.SecuritySafeCritical]
-        public unsafe PointM(in byte[] buffer, int offset)
-        {
-            fixed (byte* ptr = &buffer[offset])
-                this = *(PointM*)ptr;
-        }
-
-        [System.Security.SecuritySafeCritical]
-        public unsafe PointM(in byte[] buffer) : this(buffer, 0) { }
-    }
-
-    [StructLayout(LayoutKind.Explicit, Size = 36)]
-    public struct PointZ : IPointZ
-    {
-        [FieldOffset(0)] private ShapeType _ShapeType;
-        [FieldOffset(4)] private double _X;
-        [FieldOffset(12)] private double _Y;
-        [FieldOffset(20)] private double _Z;
-        [FieldOffset(28)] private double _M;
-
-        public ShapeType ShapeType { get => _ShapeType; set => _ShapeType = value; }
-        public double X { get => _X; set => _X = value; }
-        public double Y { get => _Y; set => _Y = value; }
-        public double Z { get => _Z; set => _Z = value; }
-        public double M { get => _M; set => _M = value; }
-
-        [System.Security.SecuritySafeCritical]
-        public unsafe PointZ(in byte[] buffer, int offset)
-        {
-            fixed (byte* ptr = &buffer[offset])
-                this = *(PointZ*)ptr;
-        }
-
-        [System.Security.SecuritySafeCritical]
-        public unsafe PointZ(in byte[] buffer) : this(buffer, 0) { }
     }
 
     [StructLayout(LayoutKind.Explicit, Size = 100)]
@@ -244,65 +122,139 @@ namespace ShpRead
         }
     }
 
+    [DebuggerDisplay("ID: {RecordNumber}; Content length: {ContentLengthInBytes}")]
+    [StructLayout(LayoutKind.Explicit, Size = 12)]
+    public struct RecordHeader : IRecordHeader
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static int Swap(int value)
+        {
+            //Original
+            //uint v = (uint)value;
+            //v = (v >> 16) | (v << 16);
+            //return (int)(((v & 0xFF00FF00) >> 8) | ((v & 0x00FF00FF) << 8));
+
+            //Optimized
+            uint v = (uint)((int)((uint)value >> 16) | value << 16);
+            return (int)((uint)((int)v & -16711936) >> 8 | (v & 0xFF00FF) << 8);
+        }
+
+        [FieldOffset(0)] private int _RecordNumber;
+        [FieldOffset(4)] private int _ContentLength;
+        [FieldOffset(8)] private ShapeType _ShapeType;
+
+        public int RecordNumber { get => Swap(_RecordNumber); set => _RecordNumber = Swap(value); }
+        public int ContentLength { get => Swap(_ContentLength)-1; set => _ContentLength = Swap(value)+1; }
+        public ShapeType ShapeType { get => _ShapeType; set => _ShapeType = value; }
+        public int ContentLengthInBytes { get => 2 * ContentLength; }
+
+        [System.Security.SecuritySafeCritical]
+        public unsafe RecordHeader(in byte[] buffer)
+        {
+            fixed (byte* ptr = &buffer[0])
+                this = *(RecordHeader*)ptr;
+        }
+    }
+
+    [DebuggerDisplay("X: {X}; Y:{Y}")]
+    [StructLayout(LayoutKind.Explicit, Size = 16)]
+    public struct Point : IPoint
+    {
+        [FieldOffset(4-4)] private double _X;
+        [FieldOffset(12-4)] private double _Y;
+
+        public double X { get => _X; set => _X = value; }
+        public double Y { get => _Y; set => _Y = value; }
+
+        [System.Security.SecuritySafeCritical]
+        public unsafe Point(in byte[] buffer)
+        {
+            fixed (byte* ptr = &buffer[0])
+                this = *(Point*)ptr;
+        }
+    }
+
+    [DebuggerDisplay("X: {X}; Y:{Y}; M:{M}")]
+    [StructLayout(LayoutKind.Explicit, Size = 24)]
+    public struct PointM : IPointM
+    {
+        [FieldOffset(4-4)] private double _X;
+        [FieldOffset(12-4)] private double _Y;
+        [FieldOffset(20-4)] private double _M;
+
+        public double X { get => _X; set => _X = value; }
+        public double Y { get => _Y; set => _Y = value; }
+        public double M { get => _M; set => _M = value; }
+
+        [System.Security.SecuritySafeCritical]
+        public unsafe PointM(in byte[] buffer)
+        {
+            fixed (byte* ptr = &buffer[0])
+                this = *(PointM*)ptr;
+        }
+    }
+
+    [DebuggerDisplay("X: {X}; Y:{Y}; Z:{Z}; M:{M}")]
+    [StructLayout(LayoutKind.Explicit, Size = 32)]
+    public struct PointZ : IPointZ
+    {
+        [FieldOffset(4-4)] private double _X;
+        [FieldOffset(12-4)] private double _Y;
+        [FieldOffset(20-4)] private double _Z;
+        [FieldOffset(28-4)] private double _M;
+
+        public double X { get => _X; set => _X = value; }
+        public double Y { get => _Y; set => _Y = value; }
+        public double Z { get => _Z; set => _Z = value; }
+        public double M { get => _M; set => _M = value; }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [System.Security.SecuritySafeCritical]
+        public unsafe PointZ(in byte[] buffer)
+        {
+            fixed (byte* ptr = &buffer[0])
+                this = *(PointZ*)ptr;
+        }
+    }
+
+
     public class ShapeFile
     {
         public ShapeFileHeader Header { get; set; }
         public unsafe ShapeFile(string path)
         {
-            using (System.IO.FileStream FS = new System.IO.FileStream(path, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read))
+            using (FileStream FS = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan))
             {
-                List<IGeometry> geometries = new List<IGeometry>(256);
-
                 byte[] buffer = new byte[100];
                 FS.Read(buffer, 0, 100);
-                Header = new ShapeFileHeader(buffer);
+                this.Header = new ShapeFileHeader(buffer);
 
-                byte[] recHeader = new byte[8];
-                FS.Read(buffer, 0, 8);
-                RecordHeader recordHeader = new RecordHeader(recHeader);
+                List<RecordHeader> recordHeaders = new List<RecordHeader>(256);
+                List<IGeometry> geometries = new List<IGeometry>(256);
 
-                byte[] pb = new byte[36];
-                FS.Read(pb, 0, 36);
-                IPointZ pz = new PointZ(pb);
+                long Length = FS.Length;
 
-
+                while (FS.Position < Length)
+                {
+                    FS.Read(buffer, 0, 12);
+                    RecordHeader recordHeader = new RecordHeader(buffer);
+                    recordHeaders.Add(recordHeader);
+                    switch (recordHeader.ShapeType)
+                    {
+                        case ShapeType.PointZ:
+                            {
+                                FS.Read(buffer, 0, 32);
+                                geometries.Add(new PointZ(buffer));
+                                break;
+                            }
+                        case ShapeType.NullShape:
+                            {
+                                geometries.Add(null);
+                                break;
+                            }
+                    }
+                }
                 Debugger.Break();
-
-
-                //switch (shptype)
-                //{
-                //    case ShapeType.NullShape:
-                //        geometries.Add(new NullShape());
-                //        goto Cs;
-                //        break;
-                //    case ShapeType.Point:
-                //        break;
-                //    case ShapeType.PolyLine:
-                //        break;
-                //    case ShapeType.Polygon:
-                //        break;
-                //    case ShapeType.Multipoint:
-                //        break;
-                //    case ShapeType.PointZ:
-                //        break;
-                //    case ShapeType.PolyLineZ:
-                //        break;
-                //    case ShapeType.PolygonZ:
-                //        break;
-                //    case ShapeType.MultipointZ:
-                //        break;
-                //    case ShapeType.PointM:
-                //        break;
-                //    case ShapeType.PolyLineM:
-                //        break;
-                //    case ShapeType.PolygonM:
-                //        break;
-                //    case ShapeType.MultipointM:
-                //        break;
-                //    case ShapeType.MultiPatch:
-                //        break;
-                //}
-
             }
         }
     }
